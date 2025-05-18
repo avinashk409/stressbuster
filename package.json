@@ -1,0 +1,13 @@
+{
+  "name": "stressbuster",
+  "version": "1.0.0",
+  "description": "StressBuster App - Firestore Rules Testing",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^2.0.0",
+    "jest": "^29.0.0"
+  }
+} 

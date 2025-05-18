@@ -1,0 +1,39 @@
+name: agora_uikit
+description: Flutter plugin to simply integrate Agora Video Calling or Live
+  Video Streaming to your app with just a few lines of code.
+version: 1.3.10
+homepage: https://www.agora.io/en/
+repository: https://github.com/AgoraIO-Community/VideoUIKit-Flutter
+
+environment:
+  sdk: ">=2.19.0 <4.0.0"
+  flutter: ">=2.2.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  agora_rtc_engine:
+    path: ../agora_rtc_engine
+  agora_rtm:
+    path: ../agora_rtm  # ✅ Use local version instead of hosted
+  http: ^1.3.0
+  lints: ">=1.0.1 <3.0.1"
+  permission_handler: ^11.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: io.agora.agora_uikit
+        pluginClass: AgoraUikitPlugin
+      ios:
+        pluginClass: AgoraUikitPlugin
+
+analyzer:
+  strong-mode: true
+  errors:
+    mixin_inherits_from_not_object: ignore

@@ -1,0 +1,61 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "stressbuster-7b405",
+          "appId": "1:90014662135:android:7cd425d3734cadfc3582f2",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "stressbuster-7b405",
+          "configurations": {
+            "android": "1:90014662135:android:7cd425d3734cadfc3582f2",
+            "ios": "1:90014662135:android:7cd425d3734cadfc3582f2",
+            "macos": "1:90014662135:android:7cd425d3734cadfc3582f2",
+            "web": "1:90014662135:android:7cd425d3734cadfc3582f2",
+            "windows": "1:90014662135:android:7cd425d3734cadfc3582f2"
+          }
+        }
+      }
+    }
+  },
+  "emulators": {
+    "firestore": {
+      "host": "localhost",
+      "port": 8082
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
+    "hub": {
+      "port": 4400
+    },
+    "logging": {
+      "port": 4500
+    }
+  }
+}

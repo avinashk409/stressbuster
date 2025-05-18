@@ -1,122 +1,382 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'dart:async';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'services/auth_service.dart';
+import 'screens/login_screen.dart';
+import 'screens/phone_auth_screen.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/counselor_dashboard.dart';
+import 'screens/admin_panel.dart';
+import 'screens/call_screen.dart';
+import 'firebase_options.dart';
+import 'config/prod_config.dart';
+
+// Background message handler
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    // Ensure we're using the existing Firebase instance
+    if (Firebase.apps.isEmpty) {
+      print('Warning: No Firebase apps found in background handler');
+      return;
+    }
+    print("Handling a background message: ${message.messageId}");
+  } catch (e) {
+    print("Error in background handler: $e");
+  }
+}
+
+// Add this function to ensure an admin user exists
+Future<void> _createAdminUserIfNeeded() async {
+  try {
+    // Read from a special file that contains admin emails
+    const adminEmails = ['admin@stressbuster.com']; // Add your admin emails here
+    
+    // Check if any admin user already exists
+    final adminQuery = await FirebaseFirestore.instance
+        .collection('users')
+        .where('isAdmin', isEqualTo: true)
+        .limit(1)
+        .get();
+    
+    if (adminQuery.docs.isNotEmpty) {
+      print('Admin user already exists');
+      return;
+    }
+    
+    // Check the current user
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      // Check if the current user's email is in the admin list
+      if (adminEmails.contains(currentUser.email)) {
+        try {
+          // Create a new user document with admin privileges
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .set({
+                'email': currentUser.email,
+                'name': currentUser.displayName ?? 'Admin User',
+                'isAdmin': true,
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
+          print('Created/Updated admin user in Firestore');
+        } catch (e) {
+          print('Error creating/updating admin user: $e');
+        }
+      }
+    }
+  } catch (e) {
+    print('Error in _createAdminUserIfNeeded: $e');
+  }
+}
+
+// Helper function to check if an asset exists
+Future<bool> assetExists(String assetPath) async {
+  try {
+    await rootBundle.load(assetPath);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+Future<void> _requestPermissions() async {
+  if (Platform.isAndroid) {
+    // Request SMS permission
+    await Permission.sms.request();
+    
+    // Request phone state permission
+    await Permission.phone.request();
+  }
+}
+
+// Initialize Firebase with proper error handling
+Future<void> initializeFirebase() async {
+  try {
+    print('Checking Firebase initialization status...');
+    
+    // Try to get the default app first
+    try {
+      final app = Firebase.app();
+      print('Firebase already initialized at native level');
+      return;
+    } catch (e) {
+      print('No existing Firebase app found, initializing new one...');
+    }
+    
+    // If no app exists, initialize Firebase
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('Firebase initialized successfully');
+
+    // Initialize App Check based on environment
+    if (kDebugMode) {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
+      );
+      print('Firebase App Check initialized with debug provider');
+    } else {
+      await ProdConfig.initialize();
+      print('Firebase App Check initialized with production provider');
+    }
+  } catch (e) {
+    print('Error during Firebase initialization: $e');
+    if (e.toString().contains('duplicate-app')) {
+      print('Firebase already initialized, continuing...');
+      return;
+    }
+    rethrow;
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase FIRST, before anything else
+  await initializeFirebase();
+
+  try {
+    // Set persistence for better offline support
+    try {
+      await FirebaseFirestore.instance.enablePersistence(const PersistenceSettings(synchronizeTabs: true));
+      print('Firestore persistence enabled');
+    } catch (e) {
+      print('Warning: Could not enable Firestore persistence: $e');
+      // Continue without persistence
+    }
+    
+    print('Firebase setup completed successfully');
+  } catch (e) {
+    print('Error during Firebase setup: $e');
+    // Show a more user-friendly error
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('Failed to initialize app. Please try again later.'),
+              SizedBox(height: 16),
+              Text('Error: $e', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      ),
+    ));
+    return;
+  }
+
+  try {
+    // Request permissions
+    await _requestPermissions();
+
+    // Load environment variables
+    try {
+      print('Loading environment variables...');
+      await dotenv.load(fileName: ".env");
+      print('Environment variables loaded successfully');
+    } catch (e) {
+      print('Warning: Could not load .env file. Using default Firebase configuration.');
+    }
+
+    // Initialize Firebase services
+    if (kDebugMode) {
+      FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+      print('Debug mode enabled - Crashlytics disabled');
+    }
+
+    // Register background handler for Firebase Messaging
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    print('Firebase Messaging background handler registered');
+
+    // Initialize notifications
+    await _initNotifications();
+
+    // Create admin user if needed
+    await _createAdminUserIfNeeded();
+
+    // Add error handling for the app
+    FlutterError.onError = (FlutterErrorDetails details) {
+      print('Flutter error: ${details.exception}');
+      print('Stack trace: ${details.stack}');
+    };
+
+    runApp(MyApp());
+  } catch (e) {
+    print('Error during app initialization: $e');
+    runApp(ErrorScreen(errorMessage: e.toString()));
+  }
+}
+
+Future<void> _initNotifications() async {
+  try {
+    // Ensure Firebase is initialized
+    if (Firebase.apps.isEmpty) {
+      print('Warning: No Firebase apps found in notifications initialization');
+      return;
+    }
+
+    final messaging = FirebaseMessaging.instance;
+    
+    // Request permission
+    final settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+    
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      print('User granted permission');
+      
+      // Get FCM token
+      try {
+        final token = await messaging.getToken();
+        print('FCM Token: $token');
+        
+        // Save token to Firestore when user is logged in
+        if (token != null) {
+          FirebaseAuth.instance.authStateChanges().listen((User? user) {
+            if (user != null) {
+              try {
+                FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(user.uid)
+                    .set({'fcmToken': token}, SetOptions(merge: true));
+              } catch (e) {
+                print('Error saving FCM token to Firestore: $e');
+              }
+            }
+          });
+        }
+      } catch (e) {
+        print('Error getting FCM token: $e');
+      }
+      
+      // Handle foreground messages
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        print('Got a message whilst in the foreground!');
+        print('Message data: ${message.data}');
+        
+        if (message.notification != null) {
+          print('Message also contained a notification: ${message.notification!.title}');
+        }
+      }, onError: (error) {
+        print('Error on foreground message: $error');
+      });
+    } else {
+      print('User declined or has not accepted permission');
+    }
+  } catch (e) {
+    print('Error in _initNotifications: $e');
+  }
+}
+
+// Safe wrapper for Firebase auth state changes to handle errors
+Stream<User?> safeAuthStateChanges() {
+  StreamController<User?> controller = StreamController<User?>();
+  
+  FirebaseAuth.instance.authStateChanges().listen((User? user) {
+    controller.add(user);
+  }, onError: (error) {
+    print('AuthStateChanges stream error: $error');
+    // Don't propagate the error, just log it
+    if (error.toString().contains('PigeonUserDetails')) {
+      print('Handling PigeonUserDetails error in auth state');
+      // Try to get the current user directly
+      final currentUser = FirebaseAuth.instance.currentUser;
+      controller.add(currentUser);
+    } else {
+      // For other errors, we'll pass null user
+      controller.add(null);
+    }
+  });
+  
+  return controller.stream;
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthService>(
+          create: (_) => AuthService(),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'StressBuster',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: LoginScreen(),
+        routes: {
+          '/login': (context) => LoginScreen(),
+          '/user-dashboard': (context) => DashboardScreen(),
+          '/counselor-dashboard': (context) => CounselorDashboard(),
+          '/admin': (context) => AdminPanel(),
+        },
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+class ErrorScreen extends StatelessWidget {
+  final String? errorMessage;
+  const ErrorScreen({this.errorMessage, Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.red),
+              SizedBox(height: 16),
+              Text(
+                'Failed to initialize app',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Please try again later',
+                style: TextStyle(fontSize: 16),
+              ),
+              if (errorMessage != null) ...[
+                SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Text(
+                    errorMessage!,
+                    style: TextStyle(fontSize: 14, color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ]
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

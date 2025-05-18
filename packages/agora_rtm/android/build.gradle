@@ -1,0 +1,83 @@
+import org.gradle.api.Project
+
+group = "io.agora.agorartm"
+version = "1.0-SNAPSHOT"
+
+buildscript {
+    ext.kotlin_version = '1.7.10'
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:7.3.0")
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: 'kotlin-android'
+
+android {
+    namespace "io.agora.agorartm"
+    compileSdkVersion 35
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 33
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        if (file('../.plugin_dev').exists()) {
+            println("Include libs/ to jniLibs.srcDirs for debugging.")
+            main.jniLibs.srcDirs += 'libs'
+        }
+    }
+
+    testOptions {
+        unitTests.all {
+            testLogging {
+                events "passed", "skipped", "failed", "standardOut", "standardError"
+                outputs.upToDateWhen { false }
+                showStandardStreams = true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    if (file('../.plugin_dev').exists()) {
+        println("Include libs/*jar for debugging.")
+        api fileTree(dir: "libs", include: ["*.jar"])
+    } else {
+        api 'io.agora.rtm:iris-rtm:2.2.1-build.1'
+        api 'io.agora:agora-rtm:2.2.1'
+    }
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.mockito:mockito-core:5.0.0")
+
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation 'io.agora.rtm:rtm-client:1.5.0'
+}

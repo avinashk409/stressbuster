@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "90014662135",
+    "firebase_url": "https://stressbuster-7b405-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "stressbuster-7b405",
+    "storage_bucket": "stressbuster-7b405.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:90014662135:android:7cd425d3734cadfc3582f2",
+        "android_client_info": {
+          "package_name": "com.example.stressbuster"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtnnjJX8i6LbHnraiptPzrNOdXDvze_ok"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

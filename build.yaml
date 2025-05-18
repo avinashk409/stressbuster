@@ -1,0 +1,11 @@
+targets:
+  $default:
+    builders:
+      mockito:
+        options:
+          # Options for how source code is generated:
+          generate_tests: false
+          # Whether to generate documentation comments for the generated code:
+          generate_docs: true
+          # Whether to generate code that can be used in tests:
+          generate_test_code: true 
